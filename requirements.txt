@@ -1,0 +1,6 @@
+bcrypt
+sqlalchemy
+pydantic
+pydantic-settings
+python-decouple
+fastapi~=0.136.1
