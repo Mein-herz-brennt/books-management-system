@@ -1,3 +1,6 @@
+pytest
+uvicorn
+pyjwt
 bcrypt
 sqlalchemy
 pydantic

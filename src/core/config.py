@@ -1,7 +1,6 @@
 from decouple import config, Csv
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 from pydantic_settings import BaseSettings
-from pydantic.typing import SecretStr
 
 class JWTConfig(BaseModel):
     ACCESS_SECRET_KEY: SecretStr = config('ACCESS_SECRET_KEY', default='secret')
@@ -42,9 +41,9 @@ class JWTConfig(BaseModel):
             self._ALGORITHM = value
 
 class Settings(BaseSettings):
-    host: str = config("HOST", cast=Csv, default="localhost,127.0.0.1")
+    host: list[str] = config("HOST", cast=Csv(), default="localhost,127.0.0.1")
     port: int = config("PORT", cast=int, default=8000)
-    DATABASE_URL: str = config('DATABASE_URL', cast=str, default="sqlite:///books.db")
+    DATABASE_URL: str = config('DATABASE_URL', cast=str, default="sqlite+aiosqlite:///books.db")
     token: JWTConfig = JWTConfig()
 
 
