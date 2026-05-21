@@ -140,7 +140,8 @@ async def test_auth_service_login_failure():
     mock_token_service.create_access_token.assert_not_called()
 
 
-def test_auth_service_refresh_success():
+@pytest.mark.asyncio
+async def test_auth_service_refresh_success():
     mock_user_service = AsyncMock()
     
     mock_token_service = MagicMock()
@@ -149,7 +150,7 @@ def test_auth_service_refresh_success():
     
     auth_service = AuthService(user_service=mock_user_service, token_service=mock_token_service)
     
-    result = auth_service.refresh("old_refresh_token")
+    result = await auth_service.refresh("old_refresh_token")
     
     assert isinstance(result, Token)
     assert result.access_token == "new_access_token"
@@ -158,7 +159,8 @@ def test_auth_service_refresh_success():
     mock_token_service.create_access_token.assert_called_once_with("testuser")
 
 
-def test_auth_service_refresh_invalid_token_type():
+@pytest.mark.asyncio
+async def test_auth_service_refresh_invalid_token_type():
     mock_user_service = AsyncMock()
     
     mock_token_service = MagicMock()
@@ -167,7 +169,7 @@ def test_auth_service_refresh_invalid_token_type():
     auth_service = AuthService(user_service=mock_user_service, token_service=mock_token_service)
     
     with pytest.raises(HTTPException) as exc_info:
-        auth_service.refresh("invalid_refresh_token")
+        await auth_service.refresh("invalid_refresh_token")
         
     assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
     assert exc_info.value.detail == "Invalid refresh token"

@@ -38,19 +38,20 @@ async def db_engine():
 
 @pytest.fixture
 async def db_session(db_engine):
-    SessionLocal = async_sessionmaker(
-        bind=db_engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-        autocommit=False,
-        autoflush=False
-    )
-    
-    async with SessionLocal() as session:
-        yield session
-        # Cleanup users after each test
-        await session.execute(delete(User))
-        await session.commit()
+    async with db_engine.connect() as connection:
+        trans = await connection.begin()
+
+        SessionLocal = async_sessionmaker(
+            bind=connection,
+            class_=AsyncSession,
+            expire_on_commit=False,
+        )
+
+        async with SessionLocal() as session:
+            yield session
+
+        await trans.rollback()
+
 
 
 @pytest.fixture

@@ -1,6 +1,7 @@
 from decouple import config, Csv
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, SecretStr, field_validator
 from pydantic_settings import BaseSettings
+from typing import Any
 
 class JWTConfig(BaseModel):
     ACCESS_SECRET_KEY: SecretStr = config('ACCESS_SECRET_KEY', default='secret')
@@ -41,10 +42,20 @@ class JWTConfig(BaseModel):
             self._ALGORITHM = value
 
 class Settings(BaseSettings):
-    host: list[str] = config("HOST", cast=Csv(), default="localhost,127.0.0.1")
+    host: list[str] = config("HOST", cast=Csv, default="localhost,127.0.0.1")
     port: int = config("PORT", cast=int, default=8000)
     DATABASE_URL: str = config('DATABASE_URL', cast=str, default="sqlite+aiosqlite:///books.db")
     token: JWTConfig = JWTConfig()
+
+    @field_validator("host", mode="before")
+    @classmethod
+    def parse_csv_host(cls, v: Any) -> list[str]:
+        if isinstance(v, Csv):
+            val_str = str(v.cast)
+            return [x.strip() for x in val_str.split(v.delimiter)]
+        if isinstance(v, str):
+            return [x.strip() for x in v.split(",")]
+        return v
 
 
 settings = Settings()
