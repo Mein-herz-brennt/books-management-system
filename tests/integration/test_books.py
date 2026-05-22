@@ -3,6 +3,7 @@ from fastapi import status
 from src.modules.auth.service import TokenService
 from src.modules.books.models import GenreEnum, Book, Author
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 async def get_auth_headers(create_test_user, username="testadmin", password="password"):
     user = await create_test_user(username=username, password=password)
@@ -171,7 +172,7 @@ async def test_update_book_success(client, db_session, create_test_user):
         "publication_year": 2010,
         "author_ids": [author2.id]
     }
-    response = await client.put(f"/api/v1/books/{book.id}", json=payload, headers=headers)
+    response = await client.patch(f"/api/v1/books/{book.id}", json=payload, headers=headers)
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
     assert data["title"] == "Updated Title"
@@ -255,3 +256,172 @@ async def test_list_books_pagination_and_filters(client, db_session):
     data = response.json()
     titles = [b["title"] for b in data["items"]]
     assert titles == ["Alpha Space", "Beta Mystery", "Gamma Space Journey"]
+
+
+@pytest.mark.asyncio
+async def test_patch_book_partial(client, db_session, create_test_user):
+    headers = await get_auth_headers(create_test_user)
+    author = Author(name="Patch Author")
+    db_session.add(author)
+    await db_session.commit()
+    await db_session.refresh(author)
+    
+    book = Book(title="Original Title", genre=GenreEnum.FICTION, publication_year=2000, authors=[author])
+    db_session.add(book)
+    await db_session.commit()
+    await db_session.refresh(book)
+
+    # Update only title
+    response = await client.patch(f"/api/v1/books/{book.id}", json={"title": "New Title Only"}, headers=headers)
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["title"] == "New Title Only"
+    assert data["genre"] == GenreEnum.FICTION.value
+    assert data["publication_year"] == 2000
+    assert len(data["authors"]) == 1
+    assert data["authors"][0].get("id") == author.id
+
+
+@pytest.mark.asyncio
+async def test_import_books_json_success(client, db_session, create_test_user):
+    headers = await get_auth_headers(create_test_user)
+    
+    import json
+    import datetime
+    
+    current_year = datetime.datetime.now().year
+    books_data = [
+        {
+            "title": "Imported JSON Book 1",
+            "genre": "Fiction",
+            "publication_year": 2020,
+            "authors": ["New Author A", "New Author B"]
+        },
+        {
+            "title": "Imported JSON Book 2",
+            "genre": "Mystery",
+            "publication_year": current_year,
+            "authors": ["New Author A"]
+        }
+    ]
+    
+    file_content = json.dumps(books_data).encode("utf-8")
+    files = {"file": ("import.json", file_content, "application/json")}
+    
+    response = await client.post("/api/v1/books/import", files=files, headers=headers)
+    assert response.status_code == status.HTTP_201_CREATED
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["imported"] == 2
+    
+
+    result = await db_session.execute(
+        select(Book).options(selectinload(Book.authors)).where(Book.title == "Imported JSON Book 1")
+    )
+    book1 = result.scalar_one_or_none()
+    assert book1 is not None
+    assert book1.genre == GenreEnum.FICTION
+    
+    # Verify authors were created and linked
+    assert len(book1.authors) == 2
+    author_names = {a.name for a in book1.authors}
+    assert "New Author A" in author_names
+    assert "New Author B" in author_names
+
+
+@pytest.mark.asyncio
+async def test_import_books_csv_success(client, db_session, create_test_user):
+    headers = await get_auth_headers(create_test_user)
+    
+    csv_content = (
+        "title,genre,publication_year,authors\n"
+        "CSV Book 1,Science Fiction,2021,Author C\n"
+        "CSV Book 2,Biography,2022,\"Author C; Author D\"\n"
+    ).encode("utf-8")
+    
+    files = {"file": ("import.csv", csv_content, "text/csv")}
+    response = await client.post("/api/v1/books/import", files=files, headers=headers)
+    assert response.status_code == status.HTTP_201_CREATED
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["imported"] == 2
+    
+    result = await db_session.execute(
+        select(Book).options(selectinload(Book.authors)).where(Book.title == "CSV Book 2")
+    )
+    book2 = result.scalar_one_or_none()
+    assert book2 is not None
+    assert len(book2.authors) == 2
+    author_names = {a.name for a in book2.authors}
+    assert "Author C" in author_names
+    assert "Author D" in author_names
+
+
+@pytest.mark.asyncio
+async def test_import_books_validation_failure(client, create_test_user):
+    headers = await get_auth_headers(create_test_user)
+    import json
+    
+    bad_data = [
+        {
+            "title": "Bad Book",
+            "genre": "InvalidGenreName",
+            "publication_year": 2020,
+            "authors": ["Author X"]
+        }
+    ]
+    file_content = json.dumps(bad_data).encode("utf-8")
+    files = {"file": ("import.json", file_content, "application/json")}
+    
+    response = await client.post("/api/v1/books/import", files=files, headers=headers)
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "Invalid genre" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_export_books_all_formats(client, db_session):
+    author = Author(name="Export Author")
+    db_session.add(author)
+    await db_session.commit()
+    await db_session.refresh(author)
+    
+    book1 = Book(title="Export Book 1", genre=GenreEnum.FICTION, publication_year=2000, authors=[author])
+    book2 = Book(title="Export Book 2", genre=GenreEnum.MYSTERY, publication_year=2010, authors=[author])
+    db_session.add_all([book1, book2])
+    await db_session.commit()
+    
+    response = await client.get("/api/v1/books/export?format=json")
+    assert response.status_code == status.HTTP_200_OK
+    assert response.headers["content-type"] == "application/json"
+    data = response.json()
+    assert len(data) >= 2
+    
+    response = await client.get("/api/v1/books/export?format=csv")
+    assert response.status_code == status.HTTP_200_OK
+    assert "text/csv" in response.headers["content-type"]
+    csv_text = response.text
+    assert "Export Book 1" in csv_text
+    assert "Export Book 2" in csv_text
+    assert "Export Author" in csv_text
+
+
+@pytest.mark.asyncio
+async def test_health_check_endpoint(client):
+    response = await client.get("/health")
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["status"] == "healthy"
+    assert "database" in data
+
+
+@pytest.mark.asyncio
+async def test_create_author_duplicate_validation(client, create_test_user):
+    headers = await get_auth_headers(create_test_user)
+    
+    payload = {"name": "Unique Author", "bio": "First creation."}
+    response = await client.post("/api/v1/authors", json=payload, headers=headers)
+    assert response.status_code == status.HTTP_201_CREATED
+    
+    response = await client.post("/api/v1/authors", json=payload, headers=headers)
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "already exists" in response.json()["detail"]

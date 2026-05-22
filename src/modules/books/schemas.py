@@ -1,3 +1,4 @@
+from datetime import datetime
 from pydantic import BaseModel, Field, field_validator
 from src.modules.books.models import GenreEnum
 
@@ -32,7 +33,7 @@ class AuthorResponse(BaseModel):
 class BookCreate(BaseModel):
     title: str = Field(..., min_length=1)
     genre: GenreEnum
-    publication_year: int = Field(..., ge=1800, le=2026)
+    publication_year: int = Field(..., ge=1800)
     author_ids: list[int] = Field(default_factory=list)
 
     @field_validator('title')
@@ -42,11 +43,19 @@ class BookCreate(BaseModel):
             raise ValueError('Title must not be empty or only whitespace')
         return v.strip()
 
+    @field_validator('publication_year')
+    @classmethod
+    def validate_year(cls, v: int) -> int:
+        current_year = datetime.now().year
+        if v > current_year:
+            raise ValueError(f'Publication year cannot be in the future (after {current_year})')
+        return v
+
 
 class BookUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1)
     genre: GenreEnum | None = None
-    publication_year: int | None = Field(default=None, ge=1800, le=2026)
+    publication_year: int | None = Field(default=None, ge=1800)
     author_ids: list[int] | None = None
 
     @field_validator('title')
@@ -56,6 +65,15 @@ class BookUpdate(BaseModel):
             if not v.strip():
                 raise ValueError('Title must not be empty or only whitespace')
             return v.strip()
+        return v
+
+    @field_validator('publication_year')
+    @classmethod
+    def validate_year(cls, v: int | None) -> int | None:
+        if v is not None:
+            current_year = datetime.now().year
+            if v > current_year:
+                raise ValueError(f'Publication year cannot be in the future (after {current_year})')
         return v
 
 

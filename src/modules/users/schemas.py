@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from datetime import datetime
 
 
@@ -7,7 +7,7 @@ class UserBase(BaseModel):
 
 
 class RegisterRequest(UserBase):
-    password: str
+    password: str = Field(..., min_length=6)
 
 
 class UserResponse(UserBase):

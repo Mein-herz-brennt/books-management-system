@@ -35,7 +35,7 @@ class Author(Base):
     )
 
     __table_args__ = (
-        CheckConstraint("length(trim(name)) > 0", name="check_author_name_non_empty"),
+        CheckConstraint("char_length(trim(name)) > 0", name="check_author_name_non_empty"),
     )
 
 
@@ -53,6 +53,6 @@ class Book(Base):
     )
 
     __table_args__ = (
-        CheckConstraint("length(trim(title)) > 0", name="check_book_title_non_empty"),
-        CheckConstraint("publication_year >= 1800 AND publication_year <= 2026", name="check_publication_year_range"),
+        CheckConstraint("char_length(trim(title)) > 0", name="check_book_title_non_empty"),
+        CheckConstraint("publication_year >= 1800", name="check_publication_year_range"),
     )

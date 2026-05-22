@@ -15,6 +15,10 @@ class AuthorRepository:
         await self.db.refresh(author)
         return author
 
+    async def get_by_name(self, name: str) -> Author | None:
+        result = await self.db.execute(select(Author).where(func.lower(Author.name) == name.lower()))
+        return result.scalar_one_or_none()
+
     async def get_by_id(self, author_id: int) -> Author | None:
         result = await self.db.execute(select(Author).where(Author.id == author_id))
         return result.scalar_one_or_none()
@@ -111,3 +115,8 @@ class BookRepository:
     async def delete(self, book: Book) -> None:
         await self.db.delete(book)
         await self.db.commit()
+
+    async def list_all_books_for_export(self) -> list[Book]:
+        stmt = select(Book).options(selectinload(Book.authors)).order_by(Book.id.asc())
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())

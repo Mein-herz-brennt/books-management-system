@@ -1,6 +1,8 @@
 import math
+from datetime import datetime
 from typing import Annotated
-from fastapi import APIRouter, Depends, status, Query
+from fastapi import APIRouter, Depends, status, Query, UploadFile, File, HTTPException
+from fastapi.responses import Response
 from src.core.dependencies import get_current_user
 from src.modules.users.models import User
 from src.modules.books.models import GenreEnum
@@ -57,13 +59,19 @@ async def list_books(
     title: str | None = Query(default=None, description="Filter by book title (case-insensitive substring)"),
     author: str | None = Query(default=None, description="Filter by author name (case-insensitive substring)"),
     genre: GenreEnum | None = Query(default=None, description="Filter by genre"),
-    min_year: int | None = Query(default=None, ge=1800, le=2026, description="Minimum publication year"),
-    max_year: int | None = Query(default=None, ge=1800, le=2026, description="Maximum publication year"),
+    min_year: int | None = Query(default=None, ge=1800, description="Minimum publication year"),
+    max_year: int | None = Query(default=None, ge=1800, description="Maximum publication year"),
     book_service: BookService = Depends(BookService)
 ):
     """
     List all books with support for pagination, sorting, and advanced filtering. Public endpoint.
     """
+    current_year = datetime.now().year
+    if min_year is not None and min_year > current_year:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"min_year cannot be greater than {current_year}")
+    if max_year is not None and max_year > current_year:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"max_year cannot be greater than {current_year}")
+
     items, total = await book_service.list_books(
         page=page,
         per_page=per_page,
@@ -85,6 +93,36 @@ async def list_books(
     }
 
 
+@router.post("/import", status_code=status.HTTP_201_CREATED)
+async def import_books(
+    current_user: Annotated[User, Depends(get_current_user)],
+    file: UploadFile = File(...),
+    book_service: BookService = Depends(BookService)
+):
+    """
+    Bulk import books from a JSON or CSV file. Requires JWT authentication.
+    """
+    content = await file.read()
+    return await book_service.import_books(content, file.filename)
+
+
+@router.get("/export")
+async def export_books(
+    format: str = Query(default="json", description="Export format (json or csv)"),
+    book_service: BookService = Depends(BookService)
+):
+    """
+    Export all books in JSON or CSV format. Public endpoint.
+    """
+    content, media_type = await book_service.export_books(format)
+    filename = f"books_export.{format.lower()}"
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
 @router.get("/{id}", response_model=BookResponse)
 async def get_book(
     id: int,
@@ -96,7 +134,7 @@ async def get_book(
     return await book_service.get_book_by_id(id)
 
 
-@router.put("/{id}", response_model=BookResponse)
+@router.patch("/{id}", response_model=BookResponse)
 async def update_book(
     id: int,
     data: BookUpdate,
@@ -104,7 +142,7 @@ async def update_book(
     book_service: BookService = Depends(BookService)
 ):
     """
-    Update a book's metadata or author associations. Requires JWT authentication.
+    Partially update a book's metadata or author associations. Requires JWT authentication.
     """
     return await book_service.update_book(id, data)
 

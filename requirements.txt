@@ -8,3 +8,9 @@ pydantic-settings
 python-decouple
 fastapi~=0.136.1
 alembic
+asyncpg
+psycopg2-binary
+httpx
+aiosqlite
+pytest-asyncio
+python-multipart

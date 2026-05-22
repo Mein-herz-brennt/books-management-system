@@ -3,8 +3,6 @@ import pytest
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.pool import StaticPool
-from sqlalchemy import delete
-
 from src.main import app
 from src.core.database import Base, get_db
 from src.modules.users.models import User
@@ -20,6 +18,8 @@ def event_loop():
     loop.close()
 
 
+from sqlalchemy import event
+
 @pytest.fixture(scope="session")
 async def db_engine():
     engine = create_async_engine(
@@ -28,6 +28,10 @@ async def db_engine():
         poolclass=StaticPool,
         echo=False
     )
+    
+    @event.listens_for(engine.sync_engine, "connect")
+    def register_sqlite_functions(dbapi_connection, connection_record):
+        dbapi_connection.create_function("char_length", 1, len)
     
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -56,13 +60,11 @@ async def db_session(db_engine):
 
 @pytest.fixture
 async def client(db_session):
-    # Override get_db dependency to use the test db session
     async def override_get_db():
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
     
-    # Create AsyncClient using ASGITransport
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as ac:
         yield ac
         

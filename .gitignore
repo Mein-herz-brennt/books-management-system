@@ -1,6 +1,4 @@
 .venv
 .idea
 .env
-.db
-pytest.ini
-alembic.ini
+*.db

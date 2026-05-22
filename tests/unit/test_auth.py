@@ -16,7 +16,7 @@ def test_create_access_token():
     
     payload = jwt.decode(
         token, 
-        settings.token.ACCESS_SECRET_KEY, 
+        settings.token.ACCESS_SECRET_KEY.get_secret_value(), 
         algorithms=[settings.token.algorithm]
     )
     assert payload["sub"] == username
@@ -31,7 +31,7 @@ def test_create_refresh_token():
     
     payload = jwt.decode(
         token, 
-        settings.token.REFRESH_SECRET_KEY, 
+        settings.token.REFRESH_SECRET_KEY.get_secret_value(), 
         algorithms=[settings.token.algorithm]
     )
     assert payload["sub"] == username
@@ -59,7 +59,7 @@ def test_get_access_payload_expired(monkeypatch):
     past_exp = datetime.utcnow() - timedelta(minutes=5)
     expired_token = jwt.encode(
         {"sub": username, "type": "access", "exp": past_exp},
-        settings.token.ACCESS_SECRET_KEY,
+        settings.token.ACCESS_SECRET_KEY.get_secret_value(),
         algorithm=settings.token.algorithm
     )
     
@@ -89,7 +89,7 @@ def test_get_refresh_payload_expired():
     past_exp = datetime.utcnow() - timedelta(days=1)
     expired_token = jwt.encode(
         {"sub": username, "type": "refresh", "exp": past_exp},
-        settings.token.REFRESH_SECRET_KEY,
+        settings.token.REFRESH_SECRET_KEY.get_secret_value(),
         algorithm=settings.token.algorithm
     )
     
@@ -109,8 +109,9 @@ async def test_auth_service_login_success():
     mock_token_service = MagicMock()
     mock_token_service.create_access_token.return_value = "access_token_mock"
     mock_token_service.create_refresh_token.return_value = "refresh_token_mock"
+    mock_db = AsyncMock()
     
-    auth_service = AuthService(user_service=mock_user_service, token_service=mock_token_service)
+    auth_service = AuthService(user_service=mock_user_service, token_service=mock_token_service, db=mock_db)
     
     result = await auth_service.login("testuser", "correctpassword")
     
@@ -128,8 +129,9 @@ async def test_auth_service_login_failure():
     mock_user_service.authenticate_user.return_value = None
     
     mock_token_service = MagicMock()
+    mock_db = AsyncMock()
     
-    auth_service = AuthService(user_service=mock_user_service, token_service=mock_token_service)
+    auth_service = AuthService(user_service=mock_user_service, token_service=mock_token_service, db=mock_db)
     
     with pytest.raises(HTTPException) as exc_info:
         await auth_service.login("testuser", "wrongpassword")
@@ -147,16 +149,23 @@ async def test_auth_service_refresh_success():
     mock_token_service = MagicMock()
     mock_token_service.get_refresh_payload.return_value = {"sub": "testuser", "type": "refresh"}
     mock_token_service.create_access_token.return_value = "new_access_token"
+    mock_token_service.create_refresh_token.return_value = "new_refresh_token"
     
-    auth_service = AuthService(user_service=mock_user_service, token_service=mock_token_service)
+    mock_db = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = None
+    mock_db.execute.return_value = mock_result
+    
+    auth_service = AuthService(user_service=mock_user_service, token_service=mock_token_service, db=mock_db)
     
     result = await auth_service.refresh("old_refresh_token")
     
     assert isinstance(result, Token)
     assert result.access_token == "new_access_token"
-    assert result.refresh_token == "old_refresh_token"
+    assert result.refresh_token == "new_refresh_token"
     mock_token_service.get_refresh_payload.assert_called_once_with("old_refresh_token")
     mock_token_service.create_access_token.assert_called_once_with("testuser")
+    mock_token_service.create_refresh_token.assert_called_once_with("testuser")
 
 
 @pytest.mark.asyncio
@@ -166,7 +175,12 @@ async def test_auth_service_refresh_invalid_token_type():
     mock_token_service = MagicMock()
     mock_token_service.get_refresh_payload.return_value = {"sub": "testuser", "type": "access"}
     
-    auth_service = AuthService(user_service=mock_user_service, token_service=mock_token_service)
+    mock_db = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = None
+    mock_db.execute.return_value = mock_result
+    
+    auth_service = AuthService(user_service=mock_user_service, token_service=mock_token_service, db=mock_db)
     
     with pytest.raises(HTTPException) as exc_info:
         await auth_service.refresh("invalid_refresh_token")

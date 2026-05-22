@@ -35,3 +35,14 @@ async def refresh(
     auth_service: AuthService = Depends(AuthService)
 ):
     return await auth_service.refresh(data.refresh_token)
+
+
+from src.core.dependencies import oauth2_scheme
+
+@router.post('/logout', status_code=status.HTTP_200_OK)
+async def logout(
+    token: Annotated[str, Depends(oauth2_scheme)],
+    auth_service: AuthService = Depends(AuthService)
+):
+    await auth_service.logout(token)
+    return {"message": "Successfully logged out"}
