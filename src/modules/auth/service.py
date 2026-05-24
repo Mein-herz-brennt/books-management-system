@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import uuid
 import jwt
 from fastapi import HTTPException, status, Depends
 from jwt import ExpiredSignatureError, InvalidTokenError
@@ -16,7 +17,10 @@ class TokenService:
     @staticmethod
     def _create_token(data: dict, expires_delta: timedelta, secret: str) -> str:
         to_encode = data.copy()
-        to_encode.update({'exp': datetime.now(timezone.utc) + expires_delta})
+        now = datetime.now(timezone.utc)
+        to_encode.update({'jti': str(uuid.uuid4()),
+                          'iat': now,
+                          'exp': now + expires_delta})
         return jwt.encode(payload=to_encode, key=secret, algorithm=settings.token.algorithm)
 
     @classmethod
